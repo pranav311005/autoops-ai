@@ -1,135 +1,108 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 import pandas as pd
-import re
-from reportlab.pdfgen import canvas
 import matplotlib.pyplot as plt
 import os
+import smtplib
+from email.mime.text import MIMEText
 
 app = Flask(__name__)
 
-# -----------------------------
-# Load leads
-# -----------------------------
-def load_leads(file):
-    return pd.read_csv(file)
+# -------------------------------
+# 📧 EMAIL FUNCTION
+# -------------------------------
+def send_email(to_email, name):
+    sender_email = "yourgmail@gmail.com"
+    sender_password = "your_app_password"  # Use App Password
 
-# -----------------------------
-# Email validation
-# -----------------------------
-def validate_email(email):
-    pattern = r'^\S+@\S+\.\S+$'
-    return "Valid" if re.match(pattern, str(email)) else "Invalid"
+    subject = "Invoice Generated"
+    body = f"Hello {name},\n\nYour invoice has been generated successfully.\n\nThank you!"
 
-# -----------------------------
-# Fraud detection
-# -----------------------------
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = to_email
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"Email sent to {name}")
+    except Exception as e:
+        print("Email Error:", e)
+
+
+# -------------------------------
+# 🧠 FRAUD DETECTION FUNCTION
+# -------------------------------
 def detect_fraud(row):
-    if row["attempts"] > 3 or row["status"] == "Invalid":
+    if "@" not in row['email'] or row['attempts'] > 3:
         return "Fraud"
     return "Safe"
 
-# -----------------------------
-# AI Lead Scoring
-# -----------------------------
-def lead_score(row):
-    score = 50
 
-    if row["status"] == "Valid":
-        score += 20
-    else:
-        score -= 30
+# -------------------------------
+# 📊 LOAD & PROCESS DATA
+# -------------------------------
+def process_data():
+    df = pd.read_csv("leads.csv")
 
-    if row["attempts"] <= 2:
-        score += 20
-    else:
-        score -= 20
+    df['status'] = df['email'].apply(lambda x: "Valid" if "@" in x else "Invalid")
+    df['fraud_status'] = df.apply(detect_fraud, axis=1)
 
-    if "gmail.com" in row["email"]:
-        score += 10
-    else:
-        score += 5
+    safe_leads = df[df['fraud_status'] == "Safe"]
 
-    return score
-
-# -----------------------------
-# AI Category
-# -----------------------------
-def categorize_lead(score):
-    if score >= 80:
-        return "High Value"
-    elif score >= 60:
-        return "Medium"
-    else:
-        return "Low"
-
-# -----------------------------
-# Invoice Generator
-# -----------------------------
-def generate_invoice(name):
-    file_name = f"{name}_invoice.pdf"
-    c = canvas.Canvas(file_name)
-
-    c.drawString(100, 750, "INVOICE")
-    c.drawString(100, 700, f"Customer Name: {name}")
-    c.drawString(100, 650, "Service: Business Automation")
-    c.drawString(100, 630, "Amount: ₹500")
-
-    c.save()
-    print(f"Invoice generated for {name}")
-
-# -----------------------------
-# Home Route (MAIN LOGIC)
-# -----------------------------
-@app.route("/")
-def home():
-    leads = load_leads("leads.csv")
-
-    # Step 1: Validation
-    leads["status"] = leads["email"].apply(validate_email)
-
-    # Step 2: Fraud detection
-    leads["fraud_status"] = leads.apply(detect_fraud, axis=1)
-
-    # Step 3: AI scoring
-    leads["score"] = leads.apply(lead_score, axis=1)
-    leads["category"] = leads["score"].apply(categorize_lead)
-
-    # Rename for UI clarity (optional)
-    leads.rename(columns={"score": "AI Score"}, inplace=True)
-
-    # Step 4: Filter safe leads
-    safe_leads = leads[leads["fraud_status"] == "Safe"]
-
-    # Step 5: Generate invoices
-    for _, row in safe_leads.iterrows():
-        generate_invoice(row["name"])
-
-    # -----------------------------
-    # Create Chart
-    # -----------------------------
-    category_counts = leads["category"].value_counts()
-
+    # 📊 Chart
+    counts = df['fraud_status'].value_counts()
     plt.figure()
-    category_counts.plot(kind='bar')
-    plt.title("Lead Category Distribution")
-    plt.xlabel("Category")
-    plt.ylabel("Count")
+    counts.plot(kind='bar')
+    plt.title("Fraud vs Safe Leads")
 
-    chart_path = "static/chart.png"
-    plt.savefig(chart_path)
+    if not os.path.exists("static"):
+        os.makedirs("static")
+
+    plt.savefig("static/chart.png")
     plt.close()
 
-    # -----------------------------
-    # Render UI
-    # -----------------------------
-    return render_template(
-        "index.html",
-        tables=[leads.to_html(classes='data', index=False)],
-        titles=leads.columns.values
-    )
+    return df, safe_leads
 
-# -----------------------------
-# Run App
-# -----------------------------
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+# -------------------------------
+# 🌐 HOME ROUTE
+# -------------------------------
+@app.route('/')
+def index():
+    df, safe_leads = process_data()
+    return render_template("index.html",
+                           tables=[df.to_html(classes='data', index=False)],
+                           safe_tables=[safe_leads.to_html(classes='data', index=False)])
+
+
+# -------------------------------
+# 📧 SEND EMAIL ROUTE
+# -------------------------------
+@app.route('/send', methods=['POST'])
+def send():
+    df, safe_leads = process_data()
+
+    for index, row in safe_leads.iterrows():
+        send_email(row['email'], row['name'])
+
+    return "✅ Emails Sent Successfully!"
+
+
+# -------------------------------
+# ▶️ RUN APP
+# -------------------------------
+if __name__ == '__main__':
+    app.run(debug=True)
+    
+
+    
+    
+
+   
+    
+  
+
