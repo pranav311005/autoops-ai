@@ -11,8 +11,8 @@ app = Flask(__name__)
 # 📧 EMAIL FUNCTION
 # -------------------------------
 def send_email(to_email, name):
-    sender_email = "yourgmail@gmail.com"
-    sender_password = "your_app_password"
+    sender_email = "pranavdevi31@gmail.com"
+    sender_password = "uydw ekiy vizz nhas"
 
     subject = "Invoice Generated"
     body = f"Hello {name},\n\nYour invoice has been generated successfully.\n\nThank you!"
